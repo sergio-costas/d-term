@@ -19,6 +19,7 @@ parser.add_argument('-o', '--object', help="Show only services that have an obje
 parser.add_argument('-i', '--interface', help="Show only services that have an interface that matches this (can use * and ? as wildcards)")
 parser.add_argument('-s', '--service', help="Show only services whose name matches this (can use * and ? as wildcards)")
 parser.add_argument('-p', '--process', help="Show only services whose cmd line matches this (can use * and ? as wildcards)")
+parser.add_argument('-a', '--all', action='store_true', help="Show also private names (:X.Y)")
 parser.add_argument('-v', '--verbose', action='store_true', help="Show all the service info when doing an object, interface or process filtering")
 args = parser.parse_args()
 
@@ -35,6 +36,9 @@ search_interface = args.interface
 search_service = args.service
 search_process = args.process
 verbose = args.verbose
+all = args.all
+
+print(search_process)
 
 class dbus_service:
     counter = 0
@@ -106,13 +110,13 @@ class dbus_service:
         return [element for element in darray]
 
     @staticmethod
-    def get_services(bus):
+    def get_services(bus, find_all):
         proxy = bus.get_object('org.freedesktop.DBus', '/org/freedesktop/DBus')
         names = proxy.ListNames(dbus_interface='org.freedesktop.DBus')
         output = []
         for name in dbus_service.dbus_array_to_python(names):
             dbus_service.show_progress()
-            if name[0] == ':':
+            if name[0] == ':' and not find_all:
                 continue
             output.append(dbus_service(bus, name))
         return output
@@ -192,7 +196,7 @@ def print_service_data(service):
         for interface_name in objects[object_name].get_interfaces():
             print(f"    {interface_name}")
 
-services = dbus_service.get_services(current_bus)
+services = dbus_service.get_services(current_bus, all)
 
 if search_service is not None:
     services = [service for service in services if fnmatch.fnmatch(service.get_name(), search_service)]
@@ -201,7 +205,7 @@ found = False
 for service in services:
     if not service.has_object(search_object) or not service.has_interface(search_interface):
         continue
-    if search_process is not None and not fnmatch.fnmatch(search_process, service.get_executable()[0]):
+    if search_process is not None and not fnmatch.fnmatch(service.get_executable()[0], search_process):
         continue
     found = True
     print_service_data(service)
