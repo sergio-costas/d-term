@@ -7,10 +7,6 @@ import time
 import argparse
 import fnmatch
 
-def print_usage():
-    print("dbus-txt [--system | --session] [-o/--object OBJECT_NAME] [-i/--interface INTERFACE_NAME] [-s/--service SERVICE_NAME]")
-    sys.exit(1)
-
 parser = argparse.ArgumentParser(prog="dbus-txt", description="A command line utility to list dbus services in either the system or the session bus, and filter by object, interface or service name.")
 group = parser.add_mutually_exclusive_group()
 group.add_argument('--system', action='store_true', help="List services from the system bus")
@@ -37,8 +33,6 @@ search_service = args.service
 search_process = args.process
 verbose = args.verbose
 all = args.all
-
-print(search_process)
 
 class dbus_service:
     counter = 0
@@ -173,14 +167,22 @@ class dbus_object:
             children = children | child.get_children_objects()
         return children
 
-def print_service_data(service):
+def print_service_data(service, service_list):
     global verbose
     global search_interface
     global search_object
     global search_process
 
-    print(service.get_name())
+    if service.processed:
+        return
+
     executable, pid = service.get_executable()
+    # print all the services that share the same process
+    for s in service_list:
+        exec, pid2 = s.get_executable()
+        if pid == pid2:
+            print(s.get_name())
+            s.processed = True
     if executable is None:
         executable = "Unknown"
     print(f"  Cmd line: {executable} (Pid: {pid})")
@@ -195,20 +197,29 @@ def print_service_data(service):
         print(f"  {object_name}")
         for interface_name in objects[object_name].get_interfaces():
             print(f"    {interface_name}")
+    print()
 
 services = dbus_service.get_services(current_bus, all)
 
 if search_service is not None:
     services = [service for service in services if fnmatch.fnmatch(service.get_name(), search_service)]
 
+def sort_services(e):
+    return e.get_name()
+
 found = False
+services.sort(key=sort_services)
+
+for service in services:
+    service.processed = False
+
 for service in services:
     if not service.has_object(search_object) or not service.has_interface(search_interface):
         continue
-    if search_process is not None and not fnmatch.fnmatch(service.get_executable()[0], search_process):
+    if (search_process is not None) and (not fnmatch.fnmatch(service.get_executable()[0], search_process)):
         continue
     found = True
-    print_service_data(service)
+    print_service_data(service, services)
 
 if not found:
     print("No DBus services found with the specified filters")
