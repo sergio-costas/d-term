@@ -11,6 +11,7 @@ The basic call method is
     d-term --system
 
 or
+
     d-term --session
 
 to list all the services in the system or session bus, the corresponding process
