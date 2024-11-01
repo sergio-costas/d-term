@@ -16,6 +16,7 @@ parser.add_argument('-i', '--interface', help="Show only services that have an i
 parser.add_argument('-s', '--service', help="Show only services whose name matches this (can use * and ? as wildcards)")
 parser.add_argument('-p', '--process', help="Show only services whose cmd line matches this (can use * and ? as wildcards)")
 parser.add_argument('-a', '--all', action='store_true', help="Show also private names (:X.Y)")
+parser.add_argument('-w', '--wakeup', action='store_true', help="Show info for activatable services")
 parser.add_argument('-v', '--verbose', action='store_true', help="Show all the service info when doing an object, interface or process filtering")
 args = parser.parse_args()
 
@@ -33,22 +34,30 @@ search_service = args.service
 search_process = args.process
 verbose = args.verbose
 all = args.all
+wakeup = args.wakeup
 
 class dbus_service:
     counter = 0
     last_time = 0
 
-    def __init__(self, bus, name):
+    def __init__(self, bus, name, activated = True):
         self._bus = bus
         self._name = name
         self._executable = None
-        self._objects = self._get_objects(bus, name)
-        # try to get the executable
-        self._find_executable()
+        self._activated = activated
+        self._pid = None
+        self._objects = {}
+        if activated:
+            self._objects = self._get_objects(bus, name)
+            # try to get the executable
+            self._find_executable()
 
     def _find_executable(self):
         proxy = self._bus.get_object('org.freedesktop.DBus', '/org/freedesktop/DBus')
-        self._pid = proxy.GetConnectionUnixProcessID(self._name, dbus_interface='org.freedesktop.DBus')
+        try:
+            self._pid = proxy.GetConnectionUnixProcessID(self._name, dbus_interface='org.freedesktop.DBus')
+        except:
+            return
         proc_file = f"/proc/{self._pid}/cmdline"
         with open(proc_file, "r") as proc_data:
             self._executable = proc_data.readline().replace("\0", " ").strip()
@@ -104,15 +113,24 @@ class dbus_service:
         return [element for element in darray]
 
     @staticmethod
-    def get_services(bus, find_all):
+    def get_services(bus, find_all, wake_up):
         proxy = bus.get_object('org.freedesktop.DBus', '/org/freedesktop/DBus')
-        names = proxy.ListNames(dbus_interface='org.freedesktop.DBus')
         output = []
-        for name in dbus_service.dbus_array_to_python(names):
+        names = dbus_service.dbus_array_to_python(proxy.ListNames(dbus_interface='org.freedesktop.DBus'))
+        activatable_names = dbus_service.dbus_array_to_python(proxy.ListActivatableNames(dbus_interface='org.freedesktop.DBus'))
+
+        for name in names:
             dbus_service.show_progress()
             if name[0] == ':' and not find_all:
                 continue
             output.append(dbus_service(bus, name))
+
+        for name in activatable_names:
+            if name in names:
+                continue
+            print(f"Waking up service {name}")
+            output.append(dbus_service(bus, name, wake_up))
+
         return output
 
 class dbus_object:
@@ -142,7 +160,12 @@ class dbus_object:
         return parent + '/' + self._object_name
 
     def _get_introspection(self):
-        proxy = self._bus.get_object(self._service_name, self.get_path())
+        try:
+            proxy = self._bus.get_object(self._service_name, self.get_path())
+        except:
+            self._interfaces = None
+            print(f"Failed to connect to service {self._service_name}")
+            return
         try:
             introspect_data = str(proxy.Introspect(dbus_interface='org.freedesktop.DBus.Introspectable'))
         except:
@@ -185,6 +208,7 @@ def print_service_data(service, service_list):
             s.processed = True
     if executable is None:
         executable = "Unknown"
+        pid = "Not running"
     print(f"  Cmd line: {executable} (Pid: {pid})")
     if search_process is not None and not verbose:
         return
@@ -199,12 +223,14 @@ def print_service_data(service, service_list):
             print(f"    {interface_name}")
     print()
 
-services = dbus_service.get_services(current_bus, all)
+services = dbus_service.get_services(current_bus, all, wakeup)
 
 if search_service is not None:
     services = [service for service in services if fnmatch.fnmatch(service.get_name(), search_service)]
 
 def sort_services(e):
+    if e.get_executable()[0] is None:
+        return ""
     return e.get_name()
 
 found = False

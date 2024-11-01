@@ -32,3 +32,8 @@ thus showing only those services whose command line matches the specified string
 
 By default, only the well-known service names will be shown; using the `all`
 parameter, instead, all the service names will be shown.
+
+Non-running activatable services will show only their name, unless `--wakeup` is
+passed in the command line, in which case they will be "woken up" to read their
+data. But keep in mind that it can launch desktop programs, like mIRC or the
+Gnome Control Center.
