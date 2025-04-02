@@ -113,7 +113,7 @@ class dbus_service:
         return [element for element in darray]
 
     @staticmethod
-    def get_services(bus, find_all, wake_up):
+    def get_services(*, bus, find_all, wake_up):
         proxy = bus.get_object('org.freedesktop.DBus', '/org/freedesktop/DBus')
         output = []
         names = dbus_service.dbus_array_to_python(proxy.ListNames(dbus_interface='org.freedesktop.DBus'))
@@ -123,12 +123,19 @@ class dbus_service:
             dbus_service.show_progress()
             if name[0] == ':' and not find_all:
                 continue
+            if not check_service_name(service_name=name):
+                continue
             output.append(dbus_service(bus, name))
 
         for name in activatable_names:
+            if not check_service_name(service_name=name):
+                continue
             if name in names:
                 continue
-            print(f"Waking up service {name}")
+            if wake_up:
+                print(f"Waking up service {name}")
+            else:
+                print(f"Not trying to wake up {name}")
             output.append(dbus_service(bus, name, wake_up))
 
         return output
@@ -223,10 +230,16 @@ def print_service_data(service, service_list):
             print(f"    {interface_name}")
     print()
 
-services = dbus_service.get_services(current_bus, all, wakeup)
+def check_service_name(*, service_name):
+    global search_service
+    if search_service is None:
+        return True
+    return fnmatch.fnmatch(service_name, search_service)
+
+services = dbus_service.get_services(bus = current_bus, find_all = all, wake_up = wakeup)
 
 if search_service is not None:
-    services = [service for service in services if fnmatch.fnmatch(service.get_name(), search_service)]
+    services = [service for service in services if check_service_name(service_name=service.get_name())]
 
 def sort_services(e):
     if e.get_executable()[0] is None:
